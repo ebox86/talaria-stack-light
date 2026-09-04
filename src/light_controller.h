@@ -51,6 +51,13 @@ public:
     // over top of it.
     bool forcedOffActive() const;
 
+    // Bench-test helper: turns exactly one color on, solid, and holds it
+    // there -- protected the same way forceOff() is -- until a new real
+    // command or another test action takes over. For clicking a lamp in
+    // the dashboard to light it up on demand.
+    void startColorTest(SignalColor color);
+    bool colorTestActive() const;
+
     // Boot indicator: all lights on briefly, then cycles
     // red -> yellow -> green repeatedly until stopBootSequence() is
     // called (main.cpp calls it once the device is on the network).
@@ -77,9 +84,11 @@ private:
         SignalPriority::NORMAL
     };
     bool preSelfTestForcedOff_ = false;
+    bool preSelfTestColorTestActive_ = false;
 
     bool allOnTestActive_ = false;
     bool forcedOffActive_ = false;
+    bool colorTestActive_ = false;
 
     enum class BootPhase { ALL_ON, CYCLE };
     bool bootSequenceActive_ = false;

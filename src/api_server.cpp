@@ -53,15 +53,26 @@ namespace {
         return base;
     }
 
+    // Applies whatever resolveDisplayState() currently computes,
+    // unconditionally. Use this for a genuine new command (a real status
+    // or condition change) -- it always wins, the same way setState()
+    // itself always clears every active test mode (self-test, all-on,
+    // forced-off, boot). Deliberate action from a person or Talaria
+    // should never be silently swallowed by a hold.
+    void applyResolvedState() {
+        SignalState next = resolveDisplayState();
+        lights->setState(next);
+        lastAppliedState = next;
+        hasAppliedState = true;
+    }
+
+    // Passive recheck -- the periodic tick and heartbeat pings, which
+    // should NOT fight an active test mode/forced-off hold, and
+    // shouldn't reset the flash timer with a redundant no-op re-apply
+    // when nothing has actually changed.
     void refreshDisplay() {
-        // Never fight a mode that already owns the lights (boot animation,
-        // self-test, all-on hold, or a forced-off) -- this used to only be
-        // checked by apiServerTick()'s periodic call, but any caller
-        // (handleHeartbeat() in particular) could still blow one of these
-        // away by calling refreshDisplay() directly. Checking it here
-        // once, for every caller, closes that off for good.
         if (lights->bootSequenceActive() || lights->selfTestActive() || lights->allOnTestActive() ||
-            lights->forcedOffActive()) {
+            lights->forcedOffActive() || lights->colorTestActive()) {
             return;
         }
 
@@ -82,7 +93,7 @@ namespace {
     void applyStatus(TalariaStatus status) {
         currentStatus = status;
         heartbeat.markContact(millis());
-        refreshDisplay();
+        applyResolvedState();
     }
 
     void sendJson(int code, JsonDocument& doc) {
@@ -126,6 +137,7 @@ namespace {
         doc["selfTest"] = lights->selfTestActive();
         doc["allOnTest"] = lights->allOnTestActive();
         doc["forcedOff"] = lights->forcedOffActive();
+        doc["colorTest"] = lights->colorTestActive();
         doc["booting"] = lights->bootSequenceActive();
         doc["activeSignals"] = conditions.count();
         doc["stale"] = heartbeat.isStale(millis());
@@ -201,6 +213,40 @@ namespace {
 
         JsonDocument doc;
         doc["result"] = "all lights off";
+        sendJson(200, doc);
+    }
+
+    // Click a lamp in the dashboard -> that color, solid, alone. Holds
+    // until a real command or another test action takes over.
+    void handleColorTest() {
+        const std::string colorArg(server.pathArg(0).c_str());
+
+        SignalColor color;
+        if (colorArg == "red") {
+            color = SignalColor::RED;
+        } else if (colorArg == "yellow") {
+            color = SignalColor::YELLOW;
+        } else if (colorArg == "green") {
+            color = SignalColor::GREEN;
+        } else {
+            JsonDocument err;
+            err["error"] = "unknown color";
+            err["color"] = colorArg;
+            JsonArray allowed = err["allowed"].to<JsonArray>();
+            allowed.add("red");
+            allowed.add("yellow");
+            allowed.add("green");
+            sendJson(400, err);
+            return;
+        }
+
+        lights->startColorTest(color);
+        hasAppliedState = false;
+        heartbeat.markContact(millis());
+
+        JsonDocument doc;
+        doc["result"] = "color set";
+        doc["color"] = colorArg;
         sendJson(200, doc);
     }
 
@@ -305,7 +351,7 @@ namespace {
         }
 
         heartbeat.markContact(millis());
-        refreshDisplay();
+        applyResolvedState();
 
         JsonDocument res;
         res["result"] = "ok";
@@ -330,7 +376,7 @@ namespace {
         }
 
         heartbeat.markContact(millis());
-        refreshDisplay();
+        applyResolvedState();
 
         JsonDocument res;
         res["result"] = "removed";
@@ -396,7 +442,9 @@ namespace {
     filter: brightness(0.32) saturate(0.5);
     box-shadow: none;
     transition: filter 0.1s linear;
+    cursor: pointer;
   }
+  .lamp:hover { border-color: rgba(255,255,255,0.6); }
   .lamp.red    { background: #ff3b30; color: #ff3b30; }
   .lamp.yellow { background: #ffcc00; color: #ffcc00; }
   .lamp.green  { background: #34c759; color: #34c759; }
@@ -434,9 +482,9 @@ namespace {
   <div class="panel">
     <div class="row">
       <div class="stack">
-        <div class="lamp red" id="lamp-red"></div>
-        <div class="lamp yellow" id="lamp-yellow"></div>
-        <div class="lamp green" id="lamp-green"></div>
+        <div class="lamp red" id="lamp-red" onclick="clickLamp('red')" title="Click to turn red on"></div>
+        <div class="lamp yellow" id="lamp-yellow" onclick="clickLamp('yellow')" title="Click to turn yellow on"></div>
+        <div class="lamp green" id="lamp-green" onclick="clickLamp('green')" title="Click to turn green on"></div>
       </div>
       <div class="fields">
         <div>status: <b id="f-status">-</b></div>
@@ -545,10 +593,13 @@ namespace {
       }
     }
 
+    let lastStatus = null;
+
     async function refresh() {
       try {
         const res = await fetch('/status');
         const s = await res.json();
+        lastStatus = s;
         document.getElementById('f-status').textContent = s.status;
         document.getElementById('f-color').textContent = s.color;
         document.getElementById('f-pattern').textContent = s.pattern;
@@ -653,6 +704,24 @@ namespace {
     async function allOffTest() {
       const msg = document.getElementById('msg');
       await sendAction(msg, '/test/all-off', { method: 'POST', headers: authHeaders() }, 'Turning all lights off...', '');
+      refresh();
+    }
+
+    async function clickLamp(color) {
+      const msg = document.getElementById('msg');
+      // Toggle: if this lamp (or all-on) is what's currently lit, clicking
+      // it again turns everything off instead of just re-applying "on"
+      // (which would look like the click did nothing).
+      const isLit = lastStatus && (
+        lastStatus.allOnTest ||
+        (lastStatus.color === color && lastStatus.pattern !== 'off')
+      );
+
+      if (isLit) {
+        await sendAction(msg, '/test/all-off', { method: 'POST', headers: authHeaders() }, 'Turning ' + color + ' off...', '');
+      } else {
+        await sendAction(msg, '/test/color/' + color, { method: 'POST', headers: authHeaders() }, 'Turning ' + color + ' on...', '');
+      }
       refresh();
     }
 
@@ -801,6 +870,7 @@ void setupApiServer(LightController& lightController) {
     server.on("/test/cycle", HTTP_POST, requireAuth(handleSelfTest));
     server.on("/test/all-on", HTTP_POST, requireAuth(handleAllOnTestStart));
     server.on("/test/all-off", HTTP_POST, requireAuth(handleAllOnTestStop));
+    server.on(UriBraces("/test/color/{}"), HTTP_POST, requireAuth(handleColorTest));
 
     server.on("/api/v1/signals", HTTP_POST, requireAuth(handlePostSignal));
     server.on(UriBraces("/api/v1/signals/{}/{}"), HTTP_DELETE, requireAuth(handleDeleteSignal));

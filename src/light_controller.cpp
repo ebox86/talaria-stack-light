@@ -122,6 +122,7 @@ void LightController::setState(const SignalState& state) {
     selfTestActive_ = false;
     allOnTestActive_ = false;
     forcedOffActive_ = false;
+    colorTestActive_ = false;
 
     state_ = state;
     flashOn_ = true;
@@ -140,16 +141,18 @@ void LightController::startSelfTest() {
 
     if (!selfTestActive_) {
         preSelfTestState_ = state_;
-        // Remember whether we were holding a forced-off (e.g. from
-        // /reset or /test/all-off) so it can be properly restored, not
-        // just the bare light pattern -- otherwise finishing self-test
-        // drops the protection and whatever the "real" computed status
-        // is (which could be the loud OFFLINE alarm pattern) shows
-        // through immediately.
+        // Remember whether we were holding a forced-off or a single
+        // color test (e.g. from /reset, /test/all-off, or clicking a
+        // lamp) so it can be properly restored, not just the bare light
+        // pattern -- otherwise finishing self-test drops the protection
+        // and whatever the "real" computed status is (which could be
+        // the loud OFFLINE alarm pattern) shows through immediately.
         preSelfTestForcedOff_ = forcedOffActive_;
+        preSelfTestColorTestActive_ = colorTestActive_;
     }
 
     forcedOffActive_ = false;
+    colorTestActive_ = false;
     selfTestActive_ = true;
     selfTestStep_ = 0;
     selfTestStepStartMs_ = millis();
@@ -180,11 +183,13 @@ void LightController::updateSelfTest(unsigned long now) {
     if (selfTestStep_ >= SELF_TEST_PHASE_COUNT) {
         selfTestActive_ = false;
         setState(preSelfTestState_);
-        // setState() unconditionally clears forcedOffActive_ (it cancels
-        // every override) -- put it back if that's genuinely what we're
-        // returning to.
+        // setState() unconditionally clears these overrides -- put back
+        // whichever one we're genuinely returning to.
         if (preSelfTestForcedOff_) {
             forcedOffActive_ = true;
+        }
+        if (preSelfTestColorTestActive_) {
+            colorTestActive_ = true;
         }
         return;
     }
@@ -206,6 +211,7 @@ void LightController::startAllOnTest() {
     bootSequenceActive_ = false;
     selfTestActive_ = false;
     forcedOffActive_ = false;
+    colorTestActive_ = false;
 
     allOnTestActive_ = true;
     allOn();
@@ -232,6 +238,17 @@ bool LightController::forcedOffActive() const {
     return forcedOffActive_;
 }
 
+void LightController::startColorTest(SignalColor color) {
+    // Same pattern as forceOff(): setState() clears every override, so
+    // set colorTestActive_ back to true after.
+    setState({ color, SignalPattern::SOLID, SignalPriority::NORMAL });
+    colorTestActive_ = true;
+}
+
+bool LightController::colorTestActive() const {
+    return colorTestActive_;
+}
+
 bool LightController::allOnTestActive() const {
     return allOnTestActive_;
 }
@@ -240,6 +257,7 @@ void LightController::startBootSequence() {
     selfTestActive_ = false;
     allOnTestActive_ = false;
     forcedOffActive_ = false;
+    colorTestActive_ = false;
 
     bootSequenceActive_ = true;
     bootSequencePhase_ = BootPhase::ALL_ON;
