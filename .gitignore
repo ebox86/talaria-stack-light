@@ -3,3 +3,8 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# Real OTA password / API key for this device. Copy
+# include/secrets.example.h to include/secrets.h and fill in real values --
+# secrets.h is intentionally never committed.
+include/secrets.h

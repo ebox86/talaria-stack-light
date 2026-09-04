@@ -1,7 +1,9 @@
 #include <Arduino.h>
 #include <ETH.h>
+#include <ESPmDNS.h>
 
 #include "network.h"
+#include "config.h"
 
 #define ETH_PHY_TYPE  ETH_PHY_LAN8720
 #define ETH_PHY_ADDR  1
@@ -11,12 +13,13 @@
 #define ETH_CLK_MODE  ETH_CLOCK_GPIO0_IN
 
 static bool connected = false;
+static bool mdnsStarted = false;
 
 static void WiFiEvent(WiFiEvent_t event) {
     switch (event) {
         case ARDUINO_EVENT_ETH_START:
             Serial.println("[ETH] Starting");
-            ETH.setHostname("talaria-stack-01");
+            ETH.setHostname(DEVICE_NAME);
             break;
 
         case ARDUINO_EVENT_ETH_CONNECTED:
@@ -32,6 +35,28 @@ static void WiFiEvent(WiFiEvent_t event) {
             Serial.println(ETH.macAddress());
 
             connected = true;
+
+            // Re-arm mDNS on every GOT_IP, not just the first one: after a
+            // link bounce (cable unplugged/replugged, switch reboot) the
+            // old mDNS socket may no longer be valid on the new interface
+            // state, and doing nothing here would leave the hostname
+            // silently unresolvable until the device itself is rebooted --
+            // exactly the kind of self-inflicted "unreachable until
+            // someone visits it in person" failure this device can't afford.
+            if (mdnsStarted) {
+                MDNS.end();
+            }
+
+            if (MDNS.begin(DEVICE_NAME)) {
+                MDNS.addService("http", "tcp", 80);
+                Serial.print("[mDNS] Reachable at http://");
+                Serial.print(DEVICE_NAME);
+                Serial.println(".local");
+                mdnsStarted = true;
+            } else {
+                Serial.println("[mDNS] Failed to start");
+                mdnsStarted = false;
+            }
             break;
 
         case ARDUINO_EVENT_ETH_DISCONNECTED:
@@ -64,4 +89,8 @@ void setupEthernet() {
 
 bool ethernetReady() {
     return connected;
+}
+
+const char* deviceHostname() {
+    return DEVICE_NAME;
 }

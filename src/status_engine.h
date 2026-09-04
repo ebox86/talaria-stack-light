@@ -11,3 +11,8 @@ enum class TalariaStatus {
 };
 
 SignalState signalForStatus(TalariaStatus status);
+
+// Human-readable names, used for JSON responses and logging.
+const char* toString(TalariaStatus status);
+const char* toString(SignalColor color);
+const char* toString(SignalPattern pattern);
