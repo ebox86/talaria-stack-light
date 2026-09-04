@@ -1,0 +1,132 @@
+### Talaria Stack Light -- API test collection
+### Open in VS Code with the "REST Client" extension (humao.rest-client)
+### and click "Send Request" above any block below.
+###
+### If mDNS isn't resolving on your network, replace @host with the
+### device's DHCP IP (printed on the serial monitor at boot).
+###
+### Set @apiKey to the API_KEY value from include/secrets.h -- every
+### POST/DELETE below needs it (X-Api-Key header) or comes back 401.
+
+@host = talaria-stack-01.local
+@base = http://{{host}}
+@apiKey = change-me
+
+### Health check (no auth required)
+GET {{base}}/health
+
+### Current status (no auth required)
+GET {{base}}/status
+
+### Set status: open (green solid)
+POST {{base}}/status/open
+X-Api-Key: {{apiKey}}
+
+### Set status: closed (red solid)
+POST {{base}}/status/closed
+X-Api-Key: {{apiKey}}
+
+### Set status: warning (yellow slow flash)
+POST {{base}}/status/warning
+X-Api-Key: {{apiKey}}
+
+### Set status: critical (red fast flash)
+POST {{base}}/status/critical
+X-Api-Key: {{apiKey}}
+
+### Set status: offline (yellow fast flash) -- manual test only, normally
+### the device sets this itself when it loses contact with Talaria
+POST {{base}}/status/offline
+X-Api-Key: {{apiKey}}
+
+### Run the light bench self-test: cycles red -> yellow -> green
+### (~700ms each), then restores whatever status was active before it
+POST {{base}}/test/cycle
+X-Api-Key: {{apiKey}}
+
+### Hold all three lights on until told otherwise (e.g. to check every
+### relay energizes, or total current draw)
+POST {{base}}/test/all-on
+X-Api-Key: {{apiKey}}
+
+### Turn all lights back off (cancels the all-on test)
+POST {{base}}/test/all-off
+X-Api-Key: {{apiKey}}
+
+### List all active structured conditions (no auth required)
+GET {{base}}/api/v1/signals
+
+### Post a structured condition -- multiple can be active at once (keyed
+### by source + condition); the light shows whichever is highest-severity
+POST {{base}}/api/v1/signals
+X-Api-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "source": "printer-front-01",
+  "condition": "PAPER_JAM",
+  "severity": "warning",
+  "message": "Front printer is jammed",
+  "ttlSeconds": 300
+}
+
+### A second, higher-severity condition from a different source -- the
+### light should switch to this one while the printer jam stays queued
+POST {{base}}/api/v1/signals
+X-Api-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "source": "network",
+  "condition": "LINK_DOWN",
+  "severity": "critical",
+  "message": "Ethernet link lost"
+}
+
+### Clear the network condition -- light should drop back to the printer
+### jam (still active), not all the way back to the base status
+DELETE {{base}}/api/v1/signals/network/LINK_DOWN
+X-Api-Key: {{apiKey}}
+
+### Clear the printer condition too -- light should drop back to the base
+### status (whatever /status/* was last set to)
+DELETE {{base}}/api/v1/signals/printer-front-01/PAPER_JAM
+X-Api-Key: {{apiKey}}
+
+### Heartbeat -- Talaria should call this periodically (well under
+### HEARTBEAT_TIMEOUT_MS) even when nothing has changed. If nothing at
+### all arrives (this, a /status/* call, or an /api/v1/signals
+### post/delete) within the timeout, the display forces itself to
+### offline on its own -- try waiting past it and re-running GET /status
+POST {{base}}/heartbeat
+X-Api-Key: {{apiKey}}
+
+### Missing/wrong API key -- should come back as a 401 JSON error
+POST {{base}}/status/open
+
+### Invalid severity -- should come back as a 400 JSON error
+POST {{base}}/api/v1/signals
+X-Api-Key: {{apiKey}}
+Content-Type: application/json
+
+{ "source": "test", "condition": "BAD_SEVERITY", "severity": "not-a-real-severity" }
+
+### ttlSeconds beyond MAX_TTL_SECONDS -- should come back as a 400 JSON error
+POST {{base}}/api/v1/signals
+X-Api-Key: {{apiKey}}
+Content-Type: application/json
+
+{ "source": "test", "condition": "TTL_TOO_LONG", "severity": "info", "ttlSeconds": 99999999 }
+
+### Post a short-lived condition, then check it's gone after ~6s (see
+### "expiresInMs" in the response and in GET /api/v1/signals meanwhile)
+POST {{base}}/api/v1/signals
+X-Api-Key: {{apiKey}}
+Content-Type: application/json
+
+{ "source": "test", "condition": "SHORT_LIVED", "severity": "warning", "ttlSeconds": 5 }
+
+### Unknown route -- should come back as a 404 JSON error, not a hang
+GET {{base}}/nope
+
+### Dashboard -- open {{base}}/ directly in a browser instead of here
