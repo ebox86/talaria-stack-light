@@ -670,12 +670,13 @@ GET /status reports clearSequence while the acknowledgement runs. The built
 image is .pio/build/wt32-eth01/firmware.bin, version 2026.10.28-slower-flashes.
 Firmware builds with compile-time sequence-boundary checks. Host Unity tests
 were added, but could not run on this Windows machine (no native gcc/g++).
-Live HTTP health and the OTA authentication challenge were verified; the probe
-was cancelled without authenticating or writing flash. This change has NOT been
-flashed or physically observed. Upload via the OTA workflow above, then activate
-the companion Talaria backend changes (user restarts Workflow Bridge).
+OTA deployment completed on 2026-10-29. Live HTTP health verified the controller
+is running version 2026.10.28-slower-flashes with OTA and idle support enabled.
+The lamp behavior has not yet been physically observed. Activate the companion
+Talaria backend changes when ready (user restarts Workflow Bridge).
 
 Repeating flashes now run at half speed: fast/alternating toggle every 500 ms,
 slow toggles every 2000 ms, and the boot chase advances every 800 ms. The test
 sequence and dashboard animation use the same slower rates. The one-time clear
-acknowledgement remains 400 ms per color. Rebuilt successfully; not OTA-flashed.
+acknowledgement remains 400 ms per color. Rebuilt and OTA-flashed successfully
+on 2026-10-29.
