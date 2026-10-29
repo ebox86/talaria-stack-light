@@ -4,15 +4,17 @@
 #include <cstdint>
 
 constexpr char DEVICE_NAME[] = "talaria-stack-01";
+constexpr char FIRMWARE_VERSION[] = "2026.10.28-slower-flashes";
 
-constexpr unsigned long SLOW_FLASH_MS = 1000;
-constexpr unsigned long FAST_FLASH_MS = 250;
+// Time between toggles: a full on/off cycle is twice this interval.
+constexpr unsigned long SLOW_FLASH_MS = 2000;
+constexpr unsigned long FAST_FLASH_MS = 500;
 
 // Boot indicator: all lights on for BOOT_ALL_ON_MS (lamp test), then
 // cycles red -> yellow -> green every BOOT_CYCLE_STEP_MS until the
 // device is on the network.
 constexpr unsigned long BOOT_ALL_ON_MS = 1000;
-constexpr unsigned long BOOT_CYCLE_STEP_MS = 400;
+constexpr unsigned long BOOT_CYCLE_STEP_MS = 800;
 
 // If nothing operational is heard from Talaria (a status change, a
 // signal post/delete, or POST /heartbeat) within this window, the

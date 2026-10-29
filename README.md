@@ -242,7 +242,7 @@ status, so you can tell "still starting up" apart from "stuck":
 
 1. **Lamp test** -- all three lights on for `BOOT_ALL_ON_MS` (default 1s).
 2. **Cycle** -- red -> yellow -> green, repeating every `BOOT_CYCLE_STEP_MS`
-   (default 400ms), until the device has an IP address.
+   (default 800ms), until the device has an IP address.
 
 Once Ethernet comes up, the cycle stops and the device shows its real
 status (`OFFLINE` -- yellow fast flash -- until an API call or Talaria
@@ -653,3 +653,29 @@ The WT32-ETH01 operates at low voltage.
 The eventual traffic signal may use mains-voltage lamps. The ESP32 must not directly switch mains voltage.
 
 The final system should use properly rated relays or contactors, appropriate fusing, protected terminals, strain relief, and physical separation between low-voltage control wiring and mains-voltage wiring.
+
+## Clear acknowledgement (2026-10-28)
+
+When the final explicit condition is deleted, firmware plays green, yellow,
+then red once (400 ms each), then holds all lamps off. New alerts interrupt
+immediately. TTL expiration is not treated as an explicit acknowledgement.
+POST /idle (API key required) preserves that sequence and only holds off when
+no conditions remain; it never deletes another source's conditions. POST /reset
+still immediately clears everything and turns the lamps off, including during
+an acknowledgement. Talaria printer/marketplace integrations must use /idle
+after DELETE instead of /reset to avoid cancelling the sequence.
+
+GET /health now reports firmwareVersion, otaSupported and idleSupported;
+GET /status reports clearSequence while the acknowledgement runs. The built
+image is .pio/build/wt32-eth01/firmware.bin, version 2026.10.28-slower-flashes.
+Firmware builds with compile-time sequence-boundary checks. Host Unity tests
+were added, but could not run on this Windows machine (no native gcc/g++).
+Live HTTP health and the OTA authentication challenge were verified; the probe
+was cancelled without authenticating or writing flash. This change has NOT been
+flashed or physically observed. Upload via the OTA workflow above, then activate
+the companion Talaria backend changes (user restarts Workflow Bridge).
+
+Repeating flashes now run at half speed: fast/alternating toggle every 500 ms,
+slow toggles every 2000 ms, and the boot chase advances every 800 ms. The test
+sequence and dashboard animation use the same slower rates. The one-time clear
+acknowledgement remains 400 ms per color. Rebuilt successfully; not OTA-flashed.

@@ -137,6 +137,7 @@ namespace {
         doc["selfTest"] = lights->selfTestActive();
         doc["allOnTest"] = lights->allOnTestActive();
         doc["forcedOff"] = lights->forcedOffActive();
+        doc["clearSequence"] = lights->clearSequenceActive();
         doc["colorTest"] = lights->colorTestActive();
         doc["booting"] = lights->bootSequenceActive();
         doc["activeSignals"] = conditions.count();
@@ -148,6 +149,9 @@ namespace {
         JsonDocument doc;
         doc["status"] = "ok";
         doc["device"] = DEVICE_NAME;
+        doc["firmwareVersion"] = FIRMWARE_VERSION;
+        doc["otaSupported"] = true;
+        doc["idleSupported"] = true;
         doc["uptimeMs"] = millis();
         doc["ethernet"] = ethernetReady();
         doc["freeHeapBytes"] = ESP.getFreeHeap();
@@ -376,7 +380,12 @@ namespace {
         }
 
         heartbeat.markContact(millis());
-        applyResolvedState();
+        if (conditions.count() == 0) {
+            lights->acknowledgeClear();
+            hasAppliedState = false;
+        } else {
+            applyResolvedState();
+        }
 
         JsonDocument res;
         res["result"] = "removed";
@@ -384,6 +393,20 @@ namespace {
         res["condition"] = conditionName.c_str();
         fillStatusDoc(res);
         sendJson(200, res);
+    }
+
+    // Atomic idle request: unlike /reset, never erases another source's
+    // alerts. It also leaves an in-progress clear acknowledgement alone.
+    void handleIdle() {
+        heartbeat.markContact(millis());
+        if (conditions.count() == 0 && !lights->forcedOffActive()) {
+            lights->forceOff();
+            hasAppliedState = false;
+        }
+        JsonDocument doc;
+        doc["result"] = conditions.count() == 0 ? "idle" : "active";
+        fillStatusDoc(doc);
+        sendJson(200, doc);
     }
 
     void handleHeartbeat() {
@@ -452,9 +475,9 @@ namespace {
   /* Duration is a full on+off cycle -- twice the firmware's toggle
      interval (SLOW_FLASH_MS/FAST_FLASH_MS), which is time-between-toggles,
      not a full period. */
-  .lamp.flash-slow { animation: lampBlink 2s step-start infinite; }
-  .lamp.flash-fast { animation: lampBlink 0.5s step-start infinite; }
-  .lamp.chase { animation: lampBlink 1.4s step-start infinite; }
+  .lamp.flash-slow { animation: lampBlink 4s step-start infinite; }
+  .lamp.flash-fast { animation: lampBlink 1s step-start infinite; }
+  .lamp.chase { animation: lampBlink 2.4s step-start infinite; }
   @keyframes lampBlink {
     0%, 49%   { filter: brightness(1.15) saturate(1.3); box-shadow: 0 0 14px 3px currentColor; }
     50%, 100% { filter: brightness(0.32) saturate(0.5); box-shadow: none; }
@@ -639,7 +662,7 @@ namespace {
         let i = 0;
         for (const color of ['red', 'yellow', 'green']) {
           lamps[color].classList.add('chase');
-          lamps[color].style.animationDelay = (i * 0.467) + 's'; // 1.4s / 3
+          lamps[color].style.animationDelay = (i * 0.8) + 's'; // 2.4s / 3
           i++;
         }
         return;
@@ -653,7 +676,7 @@ namespace {
       if (s.pattern === 'alternating') {
         lamps.red.classList.add('flash-fast');
         lamps.yellow.classList.add('flash-fast');
-        lamps.yellow.style.animationDelay = '0.25s';
+        lamps.yellow.style.animationDelay = '0.5s';
         return;
       }
 
@@ -883,6 +906,7 @@ void setupApiServer(LightController& lightController) {
     // One-button "known, blank state" -- clears every active signal,
     // resets status to offline, and force-holds all lights off.
     server.on("/reset", HTTP_POST, requireAuth(handleReset));
+    server.on("/idle", HTTP_POST, requireAuth(handleIdle));
 
     server.onNotFound(handleNotFound);
 

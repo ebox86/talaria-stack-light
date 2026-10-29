@@ -1,6 +1,7 @@
 #pragma once
 
 #include "signal_types.h"
+#include "clear_sequence.h"
 
 class LightController {
 public:
@@ -41,6 +42,8 @@ public:
     // go quiet first, and only show that alarm once contact was actually
     // established and then genuinely lost.
     void forceOff();
+    void acknowledgeClear();
+    bool clearSequenceActive() const;
 
     // True from forceOff()/stopAllOnTest() until the next real setState()
     // call (a genuine status/condition/heartbeat update). Lets
@@ -66,6 +69,8 @@ public:
     bool bootSequenceActive() const;
 
 private:
+    ClearSequence clearSequence_;
+    SignalColor clearColor_ = SignalColor::NONE;
     SignalState state_ {
         SignalColor::NONE,
         SignalPattern::OFF,

@@ -23,7 +23,7 @@ namespace {
     };
 
     constexpr unsigned long SELF_TEST_SOLID_MS = 700;
-    constexpr unsigned long SELF_TEST_FLASH_MS = 2000; // long enough to see it actually blink
+    constexpr unsigned long SELF_TEST_FLASH_MS = 2 * SLOW_FLASH_MS; // one complete on/off cycle
     constexpr unsigned long SELF_TEST_GAP_MS = 300;    // clean break between phases
 
     using M = TestChannelMode;
@@ -116,6 +116,7 @@ void LightController::applyOutputs(bool enabled) {
 }
 
 void LightController::setState(const SignalState& state) {
+    clearSequence_.cancel();
     // A real status update always wins over whatever bench test happens
     // to be running.
     bootSequenceActive_ = false;
@@ -132,10 +133,12 @@ void LightController::setState(const SignalState& state) {
 }
 
 SignalState LightController::currentState() const {
+    if (clearSequence_.active()) return { clearColor_, SignalPattern::SOLID, SignalPriority::NORMAL };
     return state_;
 }
 
 void LightController::startSelfTest() {
+    clearSequence_.cancel();
     bootSequenceActive_ = false;
     allOnTestActive_ = false;
 
@@ -208,6 +211,7 @@ void LightController::updateSelfTest(unsigned long now) {
 }
 
 void LightController::startAllOnTest() {
+    clearSequence_.cancel();
     bootSequenceActive_ = false;
     selfTestActive_ = false;
     forcedOffActive_ = false;
@@ -229,6 +233,15 @@ void LightController::forceOff() {
     setState({ SignalColor::NONE, SignalPattern::OFF, SignalPriority::NORMAL });
     forcedOffActive_ = true;
 }
+
+void LightController::acknowledgeClear() {
+    forceOff();
+    clearSequence_.start(millis());
+    clearColor_ = SignalColor::GREEN;
+    writeColor(clearColor_, true);
+}
+
+bool LightController::clearSequenceActive() const { return clearSequence_.active(); }
 
 void LightController::stopAllOnTest() {
     forceOff();
@@ -254,6 +267,7 @@ bool LightController::allOnTestActive() const {
 }
 
 void LightController::startBootSequence() {
+    clearSequence_.cancel();
     selfTestActive_ = false;
     allOnTestActive_ = false;
     forcedOffActive_ = false;
@@ -300,6 +314,11 @@ void LightController::updateBootSequence(unsigned long now) {
 
 void LightController::update() {
     unsigned long now = millis();
+    if (clearSequence_.active()) {
+        clearColor_ = clearSequence_.update(now);
+        writeColor(clearColor_, clearColor_ != SignalColor::NONE);
+        return;
+    }
 
     if (bootSequenceActive_) {
         updateBootSequence(now);
